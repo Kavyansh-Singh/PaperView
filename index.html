@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="midnight" data-fx="on">
+<html lang="en" data-theme="daylight" data-fx="on" data-pulse="on" data-gradient="off">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -9,7 +9,8 @@
   <script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
   <style>
     :root {
-      --fx-opacity: 0.45;
+      --fx-opacity: 0.35;
+      --fx-pulse-spread: 2px;
     }
 
     /* DARK THEMES */
@@ -182,14 +183,35 @@
     }
     @keyframes posPulse {
       0%, 100% { box-shadow: 0 0 0 0 rgba(56, 189, 248, var(--fx-opacity)); }
-      50% { box-shadow: 0 0 0 4px rgba(56, 189, 248, 0); }
+      50% { box-shadow: 0 0 0 var(--fx-pulse-spread) rgba(56, 189, 248, 0); }
     }
     [data-fx="on"] .flash-up { animation: flashProfit 0.9s ease-out; }
     [data-fx="on"] .flash-down { animation: flashLoss 0.9s ease-out; }
-    [data-fx="on"] .pos-pulse { animation: posPulse 2.2s infinite; }
+    [data-fx="on"][data-pulse="on"] .pos-pulse { animation: posPulse 2.4s infinite; }
     [data-fx="off"] .flash-up,
     [data-fx="off"] .flash-down,
-    [data-fx="off"] .pos-pulse { animation: none !important; }
+    [data-fx="off"] .pos-pulse,
+    [data-pulse="off"] .pos-pulse { animation: none !important; }
+
+    /* GRADIENT UI MODE (adapts cleanly across all 4 Light + 3 Dark themes) */
+    [data-gradient="on"] body {
+      background-image: radial-gradient(circle at 12% 8%, rgba(56, 189, 248, 0.14), transparent 38%),
+                        radial-gradient(circle at 88% 15%, rgba(16, 185, 129, 0.12), transparent 40%),
+                        radial-gradient(circle at 50% 95%, rgba(139, 92, 246, 0.10), transparent 45%);
+      background-attachment: fixed;
+    }
+    [data-gradient="on"] .bg-elevated {
+      background-image: linear-gradient(155deg, rgba(255, 255, 255, 0.05) 0%, rgba(56, 189, 248, 0.04) 55%, rgba(16, 185, 129, 0.03) 100%);
+    }
+    [data-gradient="on"][data-theme="daylight"] .bg-elevated,
+    [data-gradient="on"][data-theme="ivory"] .bg-elevated,
+    [data-gradient="on"][data-theme="mint"] .bg-elevated,
+    [data-gradient="on"][data-theme="rose"] .bg-elevated {
+      background-image: linear-gradient(155deg, rgba(255, 255, 255, 0.94) 0%, rgba(56, 189, 248, 0.06) 60%, rgba(16, 185, 129, 0.05) 100%);
+    }
+    [data-gradient="on"] header {
+      background-image: linear-gradient(90deg, rgba(56, 189, 248, 0.10), rgba(16, 185, 129, 0.07), rgba(139, 92, 246, 0.08));
+    }
 
     ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-track { background: var(--bg-base); }
@@ -206,7 +228,7 @@
     // =========================================================================
     const INITIAL_BALANCE = 1000000;
     const STORAGE_KEY = "paperview_state_v2";
-    const THEME_KEY = "paperview_theme_v3";
+    const THEME_KEY = "paperview_theme_v4";
     const FX_KEY = "paperview_fx_v3";
 
     const THEMES = [
@@ -448,9 +470,9 @@
     function getRelevantNews(symbol) {
       const inst = getInstrument(symbol);
       const matchKey = inst.underlying || inst.symbol;
-      const direct = MARKET_NEWS.filter(n => n.tags.includes(matchKey) || n.tags.includes(inst.symbol));
-      if (direct.length >= 3) return direct.slice(0, 4);
-      return [...direct, ...MARKET_NEWS.filter(n => !direct.includes(n))].slice(0, 4);
+      const direct = MARKET_NEWS.filter(n => n.tags.includes(matchKey) || n.tags.includes(inst.symbol)).map(n => ({ ...n, isDirect: true }));
+      const rest = MARKET_NEWS.filter(n => !(n.tags.includes(matchKey) || n.tags.includes(inst.symbol))).map(n => ({ ...n, isDirect: false }));
+      return [...direct, ...rest];
     }
 
     function getAnnualReport(symbol) {
@@ -612,13 +634,14 @@
     }
 
     const appState = {
-      theme: "midnight",
+      theme: "daylight",
       fxEnabled: true,
-      fxOpacity: 45, // 10..100 %
+      fxPulse: true,
+      fxOpacity: 25, // 0..100 % (step 1% for ultra-minimal throb)
+      gradientUi: false,
       fxPopoverOpen: false,
       user: null,
-      authTab: "signin",
-      authError: null,
+
       route: "markets",
       activeSymbol: "RELIANCE",
       feedMode: "SIM",
@@ -657,8 +680,11 @@
 
     function applyThemeAndFx() {
       document.documentElement.setAttribute("data-theme", appState.theme);
-      document.documentElement.setAttribute("data-fx", appState.fxEnabled ? "on" : "off");
+      document.documentElement.setAttribute("data-fx", appState.fxEnabled && appState.fxOpacity > 0 ? "on" : "off");
+      document.documentElement.setAttribute("data-pulse", appState.fxPulse && appState.fxOpacity > 0 ? "on" : "off");
+      document.documentElement.setAttribute("data-gradient", appState.gradientUi ? "on" : "off");
       document.documentElement.style.setProperty("--fx-opacity", (appState.fxOpacity / 100).toFixed(2));
+      document.documentElement.style.setProperty("--fx-pulse-spread", `${((appState.fxOpacity / 100) * 3.5).toFixed(2)}px`);
     }
 
     try {
@@ -668,7 +694,9 @@
       if (savedFx) {
         const fx = JSON.parse(savedFx);
         if (typeof fx.enabled === "boolean") appState.fxEnabled = fx.enabled;
-        if (Number.isFinite(fx.opacity)) appState.fxOpacity = Math.max(10, Math.min(100, fx.opacity));
+        if (typeof fx.pulse === "boolean") appState.fxPulse = fx.pulse;
+        if (typeof fx.gradient === "boolean") appState.gradientUi = fx.gradient;
+        if (Number.isFinite(fx.opacity)) appState.fxOpacity = Math.max(0, Math.min(100, fx.opacity));
       }
       const saved = window.localStorage.getItem(STORAGE_KEY);
       if (saved) {
@@ -679,7 +707,7 @@
     applyThemeAndFx();
 
     function persistUser() { try { if (appState.user) window.localStorage.setItem(STORAGE_KEY, JSON.stringify(appState.user)); else window.localStorage.removeItem(STORAGE_KEY); } catch (e) {} }
-    function persistFx() { try { window.localStorage.setItem(FX_KEY, JSON.stringify({ enabled: appState.fxEnabled, opacity: appState.fxOpacity })); } catch (e) {} }
+    function persistFx() { try { window.localStorage.setItem(FX_KEY, JSON.stringify({ enabled: appState.fxEnabled, pulse: appState.fxPulse, gradient: appState.gradientUi, opacity: appState.fxOpacity })); } catch (e) {} }
 
     function showToast(msg, tone = "emerald") {
       const root = document.getElementById("toast-root");
@@ -1022,8 +1050,21 @@
         showToast(`Visual effects ${appState.fxEnabled ? "enabled" : "turned off"}`, "amber");
         render();
       },
+      togglePulse() {
+        appState.fxPulse = !appState.fxPulse;
+        applyThemeAndFx(); persistFx();
+        showToast(`Position pulse / throb ${appState.fxPulse ? "enabled" : "turned off"}`, "amber");
+        render();
+      },
+      toggleGradient() {
+        appState.gradientUi = !appState.gradientUi;
+        applyThemeAndFx(); persistFx();
+        showToast(`Gradient UI ${appState.gradientUi ? "enabled" : "turned off"}`, "amber");
+        render();
+      },
       setFxOpacity(val) {
-        appState.fxOpacity = Math.max(10, Math.min(100, parseInt(val, 10) || 45));
+        const parsed = parseInt(val, 10);
+        appState.fxOpacity = Number.isFinite(parsed) ? Math.max(0, Math.min(100, parsed)) : 0;
         applyThemeAndFx(); persistFx();
         const lbl = document.getElementById("fx-opacity-val");
         if (lbl) lbl.textContent = `${appState.fxOpacity}%`;
@@ -1031,17 +1072,7 @@
         if (lbl2) lbl2.textContent = `${appState.fxOpacity}%`;
       },
       toggleFxPopover() { appState.fxPopoverOpen = !appState.fxPopoverOpen; render(); },
-      demoLogin() { appState.user = buildDemoUser(); appState.route = "markets"; persistUser(); showToast("Demo Portfolio loaded — 3 live positions active!", "emerald"); render(); },
-      setAuthTab(tab) { appState.authTab = tab; appState.authError = null; render(); },
-      submitAuth(e) {
-        e.preventDefault();
-        const email = document.getElementById("auth-email")?.value.trim() || "";
-        const pass = document.getElementById("auth-pass")?.value || "";
-        const name = document.getElementById("auth-name")?.value.trim() || email.split("@")[0];
-        if (!email.includes("@") || pass.length < 6) { appState.authError = "Enter a valid email and a password of at least 6 characters."; render(); return; }
-        appState.user = buildFreshUser(name, email); appState.authError = null; appState.route = "markets"; persistUser();
-        showToast("Welcome to PAPER VIEW — ₹10,00,000 virtual cash credited!", "emerald"); render();
-      },
+      startTrading() { appState.user = buildDemoUser(); appState.route = "markets"; persistUser(); showToast("Welcome to PAPER VIEW — ₹10,00,000 virtual terminal ready!", "emerald"); render(); },
       logout() { appState.user = null; appState.drawerOpen = false; appState.fxPopoverOpen = false; persistUser(); render(); },
       nav(route, symbol) {
         appState.route = route; appState.drawerOpen = false; appState.fxPopoverOpen = false; appState.globalQuery = ""; appState.pendingTrendPt = null;
@@ -1147,56 +1178,72 @@
       return "";
     }
 
-    function renderAuthScreen() {
+    function renderWelcomeScreen() {
       const lightThemes = THEMES.filter(t => t.group === "Light");
       const darkThemes = THEMES.filter(t => t.group === "Dark");
       return `
-        <div class="min-h-screen flex flex-col justify-center px-4 py-10">
-          <div class="max-w-4xl w-full mx-auto grid md:grid-cols-2 gap-8 items-center">
-            <div class="space-y-5">
-              <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/35 text-amber-500 text-xs font-semibold tracking-wide">
-                <i data-lucide="shield-check" class="w-3.5 h-3.5"></i>
-                PAPER TRADING · VIRTUAL ₹ ONLY
-              </div>
-              <h1 class="text-3xl sm:text-4xl font-extrabold tracking-tight">
-                PAPER VIEW
-                <span class="block text-lg sm:text-xl font-medium text-sky-500 mt-1">
-                  Indian Equities, Indexes, Futures &amp; Options Simulator
-                </span>
-              </h1>
-              <p class="text-secondary text-sm leading-relaxed">
-                Practice NSE &amp; BSE trading with ₹10,00,000 virtual cash, live sectoral heatmaps,
-                FY25-26 company annual reports, technical indicators &amp; chart drawing lines, and customizable visual themes.
-              </p>
-              <button onclick="act.demoLogin()" class="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm transition shadow-lg shadow-emerald-500/20">
-                <i data-lucide="sparkles" class="w-4 h-4"></i>
-                Continue as Demo User (Instant Portfolio)
-              </button>
-              <div class="space-y-1.5 pt-1">
-                <div class="flex flex-wrap items-center gap-1.5">
-                  <span class="text-[11px] font-semibold text-muted w-10">Light:</span>
-                  ${lightThemes.map(t => `<button onclick="act.setTheme('${t.id}')" class="px-2.5 py-1 rounded-lg text-[11px] font-medium border ${appState.theme === t.id ? 'border-sky-500 bg-sky-500/15 text-sky-500 font-bold' : 'border-subtle bg-elevated text-secondary'}">${t.label}</button>`).join("")}
-                </div>
-                <div class="flex flex-wrap items-center gap-1.5">
-                  <span class="text-[11px] font-semibold text-muted w-10">Dark:</span>
-                  ${darkThemes.map(t => `<button onclick="act.setTheme('${t.id}')" class="px-2.5 py-1 rounded-lg text-[11px] font-medium border ${appState.theme === t.id ? 'border-sky-500 bg-sky-500/15 text-sky-500 font-bold' : 'border-subtle bg-elevated text-secondary'}">${t.label}</button>`).join("")}
-                </div>
-              </div>
+        <div class="min-h-screen relative flex flex-col justify-between px-6 py-8 overflow-hidden">
+          <!-- Minimalistic architectural hairline backdrop -->
+          <svg class="pointer-events-none absolute inset-0 w-full h-full opacity-[0.35]" aria-hidden="true" preserveAspectRatio="none" viewBox="0 0 1200 720">
+            <line x1="0" y1="140" x2="1200" y2="140" stroke="currentColor" stroke-width="0.6" class="text-muted" stroke-dasharray="4 8" />
+            <line x1="0" y1="580" x2="1200" y2="580" stroke="currentColor" stroke-width="0.6" class="text-muted" stroke-dasharray="4 8" />
+            <line x1="180" y1="0" x2="180" y2="720" stroke="currentColor" stroke-width="0.5" class="text-muted" />
+            <line x1="1020" y1="0" x2="1020" y2="720" stroke="currentColor" stroke-width="0.5" class="text-muted" />
+            <!-- Minimalist market curve line -->
+            <path d="M 60 510 L 210 470 L 340 492 L 490 410 L 620 432 L 770 325 L 910 355 L 1140 230" fill="none" stroke="currentColor" stroke-width="1.25" class="text-sky-500/50" />
+            <circle cx="490" cy="410" r="3" fill="currentColor" class="text-sky-500/70" />
+            <circle cx="770" cy="325" r="3" fill="currentColor" class="text-emerald-500/70" />
+            <circle cx="1140" cy="230" r="3.5" fill="currentColor" class="text-emerald-500/80" />
+          </svg>
+
+          <!-- Minimal top hairline bar -->
+          <div class="relative z-10 max-w-5xl w-full mx-auto flex items-center justify-between text-[11px] text-muted">
+            <span class="tracking-[0.22em] font-semibold uppercase">NSE · BSE · F&amp;O</span>
+            <span class="px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-600 font-semibold tracking-wider text-[10px]">
+              PAPER TRADING · VIRTUAL ₹ ONLY
+            </span>
+          </div>
+
+          <!-- Centerpiece Hero -->
+          <div class="relative z-10 max-w-2xl w-full mx-auto text-center py-12 space-y-8">
+            <div class="flex items-center justify-center gap-4">
+              <span class="h-px w-12 sm:w-20 bg-current opacity-20"></span>
+              <span class="text-[11px] uppercase tracking-[0.3em] text-muted font-medium">Virtual Market Terminal</span>
+              <span class="h-px w-12 sm:w-20 bg-current opacity-20"></span>
             </div>
 
-            <div class="bg-elevated border border-subtle rounded-2xl p-6 shadow-xl">
-              <div class="flex gap-2 mb-5 p-1 bg-surface rounded-xl border border-subtle">
-                <button onclick="act.setAuthTab('signin')" class="flex-1 py-2 text-xs font-semibold rounded-lg ${appState.authTab === 'signin' ? 'bg-sky-500 text-white' : 'text-secondary'}">Sign In</button>
-                <button onclick="act.setAuthTab('signup')" class="flex-1 py-2 text-xs font-semibold rounded-lg ${appState.authTab === 'signup' ? 'bg-sky-500 text-white' : 'text-secondary'}">Create Account</button>
-              </div>
-              <form onsubmit="act.submitAuth(event)" class="space-y-4">
-                ${appState.authTab === "signup" ? `<div><label class="block text-xs text-secondary mb-1.5">Display Name</label><input id="auth-name" type="text" required placeholder="e.g., Aarav Sharma" class="w-full px-3.5 py-2.5 rounded-xl bg-surface border border-subtle text-sm focus:outline-none focus:border-sky-500" /></div>` : ""}
-                <div><label class="block text-xs text-secondary mb-1.5">Email</label><input id="auth-email" type="email" required placeholder="trader@example.com" class="w-full px-3.5 py-2.5 rounded-xl bg-surface border border-subtle text-sm focus:outline-none focus:border-sky-500" /></div>
-                <div><label class="block text-xs text-secondary mb-1.5">Password</label><input id="auth-pass" type="password" required minlength="6" placeholder="Minimum 6 characters" class="w-full px-3.5 py-2.5 rounded-xl bg-surface border border-subtle text-sm focus:outline-none focus:border-sky-500" /></div>
-                ${appState.authError ? `<div class="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-500 text-xs">${appState.authError}</div>` : ""}
-                <button type="submit" class="w-full py-2.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-white font-bold text-sm transition">${appState.authTab === "signup" ? "Start Fresh with ₹10,00,000 Virtual Cash" : "Sign In to PAPER VIEW"}</button>
-              </form>
+            <div class="space-y-3">
+              <h1 class="text-5xl sm:text-7xl font-light tracking-[0.22em] text-primary select-none">
+                PAPER <span class="font-semibold">VIEW</span>
+              </h1>
+              <div class="mx-auto w-24 h-0.5 bg-gradient-to-r from-transparent via-sky-500 to-transparent opacity-70"></div>
+              <p class="text-sm sm:text-base text-secondary max-w-md mx-auto leading-relaxed pt-2 font-normal">
+                Practice Indian equities, indexes, futures &amp; options with ₹10,00,000 virtual capital, live charts, and zero real-money risk.
+              </p>
             </div>
+
+            <div class="pt-2 flex flex-col items-center gap-4">
+              <button onclick="act.startTrading()" class="group inline-flex items-center justify-center gap-3 px-9 py-4 rounded-full bg-slate-900 hover:bg-slate-800 dark:bg-sky-500 text-white font-semibold text-sm tracking-wide transition-all shadow-lg shadow-slate-900/15 hover:shadow-xl hover:-translate-y-0.5">
+                <span>Start Paper Trading</span>
+                <i data-lucide="arrow-right" class="w-4 h-4 transition-transform group-hover:translate-x-1"></i>
+              </button>
+              <div class="flex items-center gap-4 text-[11px] text-muted tabular-nums">
+                <span>₹10,00,000 Virtual Cash</span>
+                <span class="w-1 h-1 rounded-full bg-current opacity-30"></span>
+                <span>24/7 Live Sim</span>
+                <span class="w-1 h-1 rounded-full bg-current opacity-30"></span>
+                <span>No Sign-Up Needed</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Minimal bottom theme strip -->
+          <div class="relative z-10 max-w-5xl w-full mx-auto flex flex-wrap items-center justify-center gap-1.5 pt-4 border-t border-subtle">
+            <span class="text-[10px] uppercase tracking-widest text-muted mr-1">Theme</span>
+            ${[...lightThemes, ...darkThemes].map(t => `
+              <button onclick="act.setTheme('${t.id}')" class="px-2.5 py-1 rounded-full text-[11px] font-medium border transition ${appState.theme === t.id ? 'border-sky-500 bg-sky-500/10 text-sky-600 font-semibold' : 'border-subtle bg-elevated/80 text-secondary bg-hover'}">${t.label}</button>
+            `).join("")}
+            <button onclick="act.toggleGradient()" class="px-2.5 py-1 rounded-full text-[11px] font-medium border transition ${appState.gradientUi ? 'border-sky-500 bg-sky-500 text-white' : 'border-subtle bg-elevated/80 text-secondary'}">Gradient</button>
           </div>
         </div>
       `;
@@ -1276,19 +1323,22 @@
       `;
     }
 
-    function renderNewsCompactCard(items, title = "Market & Stock News") {
+    function renderNewsCompactCard(items, title = "Market & Stock News", singleWindow = false) {
       return `
         <div class="bg-elevated border border-subtle rounded-2xl p-4 space-y-2.5">
           <div class="flex items-center justify-between">
             <h2 class="text-xs font-bold uppercase tracking-wider text-secondary flex items-center gap-1.5">
               <i data-lucide="newspaper" class="w-3.5 h-3.5 text-sky-500"></i> ${title}
             </h2>
-            <span class="text-[10px] text-muted">Nov 2026</span>
+            <span class="text-[10px] text-muted">${items.length} Headlines · Nov 2026</span>
           </div>
-          <div class="divide-y divide-subtle">
+          <div class="divide-y divide-subtle ${singleWindow ? 'max-h-72 overflow-y-auto pr-1' : ''}">
             ${items.map(n => `
               <a href="${n.url}" target="_blank" rel="noopener noreferrer" class="block py-2 first:pt-0 last:pb-0 group">
-                <div class="text-xs font-medium group-hover:text-sky-500 transition leading-snug">${n.title}</div>
+                <div class="flex items-start justify-between gap-1.5">
+                  <div class="text-xs font-medium group-hover:text-sky-500 transition leading-snug">${n.title}</div>
+                  ${n.isDirect ? '<span class="shrink-0 px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-500 text-[9px] font-bold">MATCH</span>' : ''}
+                </div>
                 <div class="flex items-center justify-between mt-1 text-[10px] text-muted">
                   <span>${n.source} · ${n.time}</span>
                   <span class="text-sky-500 font-semibold">${n.tags.slice(0, 2).join(" · ")}</span>
@@ -1542,16 +1592,14 @@
 
           ${renderLivePositionsStrip()}
 
-          <div class="grid md:grid-cols-2 gap-4">
-            <div class="bg-elevated border border-subtle rounded-2xl p-4">
-              <h2 class="text-xs font-bold uppercase tracking-wider text-secondary mb-3">5-Level Market Depth</h2>
-              <div class="grid grid-cols-2 gap-3 text-xs tabular-nums">
-                <div><div class="flex justify-between text-[10px] text-muted pb-1 border-b border-subtle"><span>BID</span><span>QTY</span></div>${bids.map(b => `<div class="flex justify-between py-1 border-b border-subtle/50"><span class="text-emerald-500 font-semibold">₹${b.p}</span><span>${b.qty.toLocaleString("en-IN")}</span></div>`).join("")}</div>
-                <div><div class="flex justify-between text-[10px] text-muted pb-1 border-b border-subtle"><span>ASK</span><span>QTY</span></div>${asks.map(a => `<div class="flex justify-between py-1 border-b border-subtle/50"><span class="text-rose-500 font-semibold">₹${a.p}</span><span>${a.qty.toLocaleString("en-IN")}</span></div>`).join("")}</div>
-              </div>
+          <div class="bg-elevated border border-subtle rounded-2xl p-4">
+            <h2 class="text-xs font-bold uppercase tracking-wider text-secondary mb-3">5-Level Market Depth</h2>
+            <div class="grid grid-cols-2 gap-4 text-xs tabular-nums">
+              <div><div class="flex justify-between text-[10px] text-muted pb-1 border-b border-subtle"><span>BID PRICE</span><span>QTY</span></div>${bids.map(b => `<div class="flex justify-between py-1 border-b border-subtle/50"><span class="text-emerald-500 font-semibold">₹${b.p}</span><span>${b.qty.toLocaleString("en-IN")}</span></div>`).join("")}</div>
+              <div><div class="flex justify-between text-[10px] text-muted pb-1 border-b border-subtle"><span>ASK PRICE</span><span>QTY</span></div>${asks.map(a => `<div class="flex justify-between py-1 border-b border-subtle/50"><span class="text-rose-500 font-semibold">₹${a.p}</span><span>${a.qty.toLocaleString("en-IN")}</span></div>`).join("")}</div>
             </div>
-            ${renderNewsCompactCard(getRelevantNews(inst.symbol), `News · ${inst.symbol}`)}
           </div>
+          <div class="lg:hidden">${renderNewsCompactCard(getRelevantNews(inst.symbol), `All Stock News · ${inst.symbol}`, true)}</div>
         `;
       } else if (appState.tTab === "chain") {
         const chain = buildOptionChain(fnoUnd, undSpot);
@@ -1654,7 +1702,10 @@
               </div>
               ${tabBody}
             </div>
-            <div class="hidden lg:block lg:col-span-4 sticky top-20 space-y-4">${renderOrderTicketHTML(inst, q.ltp)}</div>
+            <div class="hidden lg:block lg:col-span-4 sticky top-20 space-y-4">
+              ${renderOrderTicketHTML(inst, q.ltp)}
+              ${renderNewsCompactCard(getRelevantNews(inst.symbol), `All Stock News · ${inst.symbol}`, true)}
+            </div>
           </div>
         </div>
       `;
@@ -1780,16 +1831,27 @@
             </div>
 
             <div class="pt-4 border-t border-subtle space-y-3">
-              <div class="flex items-center justify-between gap-4">
+              <div class="flex flex-wrap items-center justify-between gap-4">
                 <div>
-                  <h2 class="text-sm font-semibold">Visual Effects (Open Position Flashing &amp; Pulse)</h2>
-                  <p class="text-xs text-secondary mt-0.5">Toggle green/red tick flashes on open positions and adjust flash opacity below.</p>
+                  <h2 class="text-sm font-semibold">Gradient UI Mode</h2>
+                  <p class="text-xs text-secondary mt-0.5">Enable subtle ambient glass-gradient surfaces across your chosen light or dark theme.</p>
                 </div>
-                <button onclick="act.toggleFx()" class="px-4 py-2 rounded-xl text-xs font-bold ${appState.fxEnabled ? 'bg-emerald-500 text-slate-950' : 'bg-surface border border-subtle text-secondary'}">${appState.fxEnabled ? 'ON' : 'OFF'}</button>
+                <button onclick="act.toggleGradient()" class="px-4 py-2 rounded-xl text-xs font-bold ${appState.gradientUi ? 'bg-sky-500 text-white' : 'bg-surface border border-subtle text-secondary'}">${appState.gradientUi ? 'Gradient ON' : 'Flat UI'}</button>
+              </div>
+
+              <div class="flex flex-wrap items-center justify-between gap-4 pt-2 border-t border-subtle">
+                <div>
+                  <h2 class="text-sm font-semibold">Visual Effects (Flash &amp; Throb)</h2>
+                  <p class="text-xs text-secondary mt-0.5">Control tick flashes, position pulse/throb, and fine-tune opacity down to 0–1%.</p>
+                </div>
+                <div class="flex gap-2">
+                  <button onclick="act.toggleFx()" class="px-3.5 py-2 rounded-xl text-xs font-bold ${appState.fxEnabled ? 'bg-emerald-500 text-slate-950' : 'bg-surface border border-subtle text-secondary'}">Flash: ${appState.fxEnabled ? 'ON' : 'OFF'}</button>
+                  <button onclick="act.togglePulse()" class="px-3.5 py-2 rounded-xl text-xs font-bold ${appState.fxPulse ? 'bg-sky-500 text-white' : 'bg-surface border border-subtle text-secondary'}">Throb: ${appState.fxPulse ? 'ON' : 'OFF'}</button>
+                </div>
               </div>
               <div class="flex items-center gap-3 bg-surface border border-subtle rounded-xl px-3.5 py-2.5">
-                <span class="text-xs text-secondary whitespace-nowrap">Flash Opacity</span>
-                <input type="range" min="10" max="100" step="5" value="${appState.fxOpacity}" oninput="act.setFxOpacity(this.value)" ${!appState.fxEnabled ? 'disabled' : ''} aria-label="Visual effects opacity" class="flex-1 accent-sky-500" />
+                <span class="text-xs text-secondary whitespace-nowrap">Effect Intensity</span>
+                <input type="range" min="0" max="100" step="1" value="${appState.fxOpacity}" oninput="act.setFxOpacity(this.value)" ${!appState.fxEnabled ? 'disabled' : ''} aria-label="Visual effects opacity" class="flex-1 accent-sky-500" />
                 <span id="fx-opacity-val-settings" class="text-xs font-bold tabular-nums w-10 text-right">${appState.fxOpacity}%</span>
               </div>
             </div>
@@ -1809,7 +1871,7 @@
 
     function render() {
       const root = document.getElementById("app");
-      if (!appState.user) { root.innerHTML = renderAuthScreen(); if (window.lucide) lucide.createIcons(); return; }
+      if (!appState.user) { root.innerHTML = renderWelcomeScreen(); if (window.lucide) lucide.createIcons(); return; }
 
       const u = appState.user, ist = getISTStatus();
       const navItems = [["markets","Markets","compass"],["trade","Trade","activity"],["portfolio","Portfolio","briefcase"],["orders","Orders","clipboard-list"],["watchlist","Watchlist","bookmark"],["analytics","Analytics","bar-chart-3"],["leaderboard","Leaderboard","trophy"]];
@@ -1853,14 +1915,22 @@
               </button>
 
               ${appState.fxPopoverOpen ? `
-                <div class="absolute right-0 top-11 w-64 bg-elevated border border-strong rounded-2xl shadow-2xl p-3.5 space-y-3 z-50">
+                <div class="absolute right-0 top-11 w-72 bg-elevated border border-strong rounded-2xl shadow-2xl p-3.5 space-y-3 z-50">
                   <div class="flex items-center justify-between">
-                    <span class="text-xs font-bold">Visual Flash Effects</span>
+                    <span class="text-xs font-bold">Gradient UI</span>
+                    <button onclick="act.toggleGradient()" class="px-2.5 py-1 rounded-lg text-[11px] font-bold ${appState.gradientUi ? 'bg-sky-500 text-white' : 'bg-surface border border-subtle text-secondary'}">${appState.gradientUi ? 'ON' : 'OFF'}</button>
+                  </div>
+                  <div class="flex items-center justify-between pt-2 border-t border-subtle">
+                    <span class="text-xs font-bold">Tick Flash</span>
                     <button onclick="act.toggleFx()" class="px-2.5 py-1 rounded-lg text-[11px] font-bold ${appState.fxEnabled ? 'bg-emerald-500 text-slate-950' : 'bg-surface border border-subtle text-secondary'}">${appState.fxEnabled ? 'ON' : 'OFF'}</button>
                   </div>
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs font-bold">Position Throb / Pulse</span>
+                    <button onclick="act.togglePulse()" class="px-2.5 py-1 rounded-lg text-[11px] font-bold ${appState.fxPulse ? 'bg-sky-500 text-white' : 'bg-surface border border-subtle text-secondary'}">${appState.fxPulse ? 'ON' : 'OFF'}</button>
+                  </div>
                   <div class="space-y-1">
-                    <div class="flex justify-between text-[11px] text-secondary"><span>Flash Opacity</span><span id="fx-opacity-val" class="font-bold tabular-nums">${appState.fxOpacity}%</span></div>
-                    <input type="range" min="10" max="100" step="5" value="${appState.fxOpacity}" oninput="act.setFxOpacity(this.value)" ${!appState.fxEnabled ? 'disabled' : ''} aria-label="Flash opacity slider" class="w-full accent-sky-500" />
+                    <div class="flex justify-between text-[11px] text-secondary"><span>Effect Opacity (0–100%)</span><span id="fx-opacity-val" class="font-bold tabular-nums">${appState.fxOpacity}%</span></div>
+                    <input type="range" min="0" max="100" step="1" value="${appState.fxOpacity}" oninput="act.setFxOpacity(this.value)" ${!appState.fxEnabled ? 'disabled' : ''} aria-label="Effect opacity slider" class="w-full accent-sky-500" />
                   </div>
                   <button onclick="act.toggleFxPopover()" class="w-full py-1.5 rounded-lg bg-surface border border-subtle text-[11px] font-semibold">Done</button>
                 </div>` : ""}
